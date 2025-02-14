@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=YouTube Downloader
+Comment=Download YouTube videos
+Exec=/usr/bin/python3 /home/coder/Projects/YTDGUI/main.py
+Type=Application
+Terminal=false
+Categories=Utility;Network;
+StartupNotify=true

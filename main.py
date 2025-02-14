@@ -3,47 +3,81 @@ import yt_dlp
 import threading
 from pathlib import Path
 import os
+from tkinter import filedialog
 
 class YTDownloaderGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # Configure window
         self.title("YouTube Downloader")
-        self.geometry("600x400")
-        
-        # Configure grid layouts
+        self.geometry("800x600")
+        self.cancel_download = False  # Used to cancel an ongoing download
+
+        # Main grid: 2 columns to split some buttons
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=1)
+        self.grid_columnconfigure(1, weight=1)
         
-        # URL and Playlist Frame
+        # --- Top Frame: URL, Options & Destination ---
         self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.top_frame.grid(row=0, column=0, padx=20, pady=20)
+        self.top_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=20, sticky="ew")
         self.top_frame.grid_columnconfigure(0, weight=1)
+        self.top_frame.grid_columnconfigure(1, weight=1)
         
-        # URL Entry
+        # URL Entry (Row 0)
         self.url_entry = ctk.CTkEntry(
-            self.top_frame,  # Changed parent to top_frame
+            self.top_frame,
             placeholder_text="Enter YouTube URL",
-            width=400,
+            width=600,
             height=35
         )
-        self.url_entry.grid(row=0, column=0, padx=(0, 10))  # Added right padding
+        self.url_entry.grid(row=0, column=0, columnspan=2, padx=10, pady=(0,10), sticky="ew")
         
-        # Playlist Checkbox moved up
-        self.is_playlist = ctk.BooleanVar(value=False)
+        # Options: Playlist and Subtitles (Row 1)
+        self.playlist_var = ctk.BooleanVar(value=False)
         self.playlist_check = ctk.CTkCheckBox(
-            self.top_frame,  # Changed parent to top_frame
+            self.top_frame,
             text="Playlist",
-            variable=self.is_playlist,
+            variable=self.playlist_var,
             font=("Arial", 12),
-            height=35
+            height=30
         )
-        self.playlist_check.grid(row=0, column=1)
+        self.playlist_check.grid(row=1, column=0, padx=10, sticky="w")
         
-        # Format Selection with better styling
+        self.download_subtitles = ctk.BooleanVar(value=False)
+        self.subtitles_check = ctk.CTkCheckBox(
+            self.top_frame,
+            text="Subtitles",
+            variable=self.download_subtitles,
+            font=("Arial", 12),
+            height=30
+        )
+        self.subtitles_check.grid(row=1, column=1, padx=10, sticky="e")
+        
+        # Destination Selection (Row 2)
+        default_path = str(Path.home() / "Downloads" / "YTDownloader")
+        self.dest_entry = ctk.CTkEntry(
+            self.top_frame,
+            placeholder_text="Destination Folder",
+            width=400,
+            height=35,
+        )
+        self.dest_entry.insert(0, default_path)
+        self.dest_entry.grid(row=2, column=0, padx=(10,5), pady=(10,0), sticky="ew")
+        
+        self.browse_btn = ctk.CTkButton(
+            self.top_frame,
+            text="Browse",
+            command=self.browse_folder,
+            width=100,
+            height=35,
+            font=("Arial", 12)
+        )
+        self.browse_btn.grid(row=2, column=1, padx=(5,10), pady=(10,0))
+        
+        # --- Format Selection Frame (Row 1 in main grid) ---
         self.format_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.format_frame.grid(row=1, column=0, padx=20, pady=5)
+        self.format_frame.grid(row=1, column=0, columnspan=2, padx=20, pady=5, sticky="ew")
+        self.format_frame.grid_columnconfigure((0,1), weight=1)
         
         self.format_var = ctk.StringVar(value="mp4")
         self.video_radio = ctk.CTkRadioButton(
@@ -64,8 +98,8 @@ class YTDownloaderGUI(ctk.CTk):
         )
         self.audio_radio.grid(row=0, column=1, padx=20)
         
-        # Quality Selection with better styling
-        self.quality_var = ctk.StringVar(value="best")
+        # --- Quality Selection (Row 2 in main grid) ---
+        self.quality_var = ctk.StringVar(value="Best")
         self.quality_menu = ctk.CTkOptionMenu(
             self,
             values=["Best", "720p", "480p", "360p"],
@@ -74,26 +108,40 @@ class YTDownloaderGUI(ctk.CTk):
             height=32,
             font=("Arial", 12)
         )
-        self.quality_menu.grid(row=2, column=0, padx=20, pady=10)
+        self.quality_menu.grid(row=2, column=0, columnspan=2, padx=20, pady=10)
         
-        # Download Button with better styling
+        # --- Buttons Frame: Download & Cancel (Row 3 in main grid) ---
+        self.button_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.button_frame.grid(row=3, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
+        self.button_frame.grid_columnconfigure((0,1), weight=1)
+        
         self.download_btn = ctk.CTkButton(
-            self, 
+            self.button_frame,
             text="Download",
             command=self.start_download,
             width=200,
             height=40,
             font=("Arial", 13, "bold")
         )
-        self.download_btn.grid(row=3, column=0, padx=20, pady=10)
+        self.download_btn.grid(row=0, column=0, padx=10)
         
-        # Progress Frame (initially hidden)
+        self.cancel_btn = ctk.CTkButton(
+            self.button_frame,
+            text="Cancel",
+            command=self.cancel_download_process,
+            width=200,
+            height=40,
+            font=("Arial", 13, "bold"),
+            state="disabled"
+        )
+        self.cancel_btn.grid(row=0, column=1, padx=10)
+        
+        # --- Progress Frame (Row 4 in main grid) ---
         self.progress_frame = ctk.CTkFrame(self)
-        self.progress_frame.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
+        self.progress_frame.grid(row=4, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
         self.progress_frame.grid_columnconfigure(0, weight=1)
-        self.progress_frame.grid_remove()  # Hide initially
+        self.progress_frame.grid_remove()
         
-        # Progress Bar with better styling
         self.progress_bar = ctk.CTkProgressBar(
             self.progress_frame,
             height=15,
@@ -102,7 +150,6 @@ class YTDownloaderGUI(ctk.CTk):
         self.progress_bar.grid(row=0, column=0, padx=10, pady=(10, 0), sticky="ew")
         self.progress_bar.set(0)
         
-        # Status Labels Frame
         self.status_frame = ctk.CTkFrame(self.progress_frame, fg_color="transparent")
         self.status_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
         self.status_frame.grid_columnconfigure((0,1), weight=1)
@@ -134,46 +181,51 @@ class YTDownloaderGUI(ctk.CTk):
             font=("Arial", 11)
         )
         self.progress_label.grid(row=1, column=1, sticky="e")
+        
+        # --- Log Textbox (Row 5 in main grid) ---
+        self.log_text = ctk.CTkTextbox(self, width=760, height=100)
+        self.log_text.grid(row=5, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
+        self.log_text.configure(state="normal")
+        self.log_message("Application started.")
 
+    def browse_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.dest_entry.delete(0, "end")
+            self.dest_entry.insert(0, folder)
+            self.log_message(f"Destination set to: {folder}")
+
+    def log_message(self, message: str):
+        self.log_text.insert("end", message + "\n")
+        self.log_text.see("end")
+        
     def download_callback(self, d):
+        if self.cancel_download:
+            raise Exception("Download cancelled by user.")
         if d['status'] == 'downloading':
-            # Show progress frame if hidden
             if not self.progress_frame.winfo_viewable():
                 self.progress_frame.grid()
-            
-            # Calculate percentage
-            if 'total_bytes' in d:
+            if 'total_bytes' in d and d['total_bytes']:
                 percentage = d['downloaded_bytes'] / d['total_bytes']
-            elif 'total_bytes_estimate' in d:
+            elif 'total_bytes_estimate' in d and d['total_bytes_estimate']:
                 percentage = d['downloaded_bytes'] / d['total_bytes_estimate']
             else:
                 percentage = 0
-            
-            # Update progress bar
             self.progress_bar.set(percentage)
-            
-            # Update status labels
             self.speed_label.configure(text=f"Speed: {d.get('speed_str', '--')}")
-            self.size_label.configure(
-                text=f"Size: {d.get('_percent_str', '--')} of {d.get('_total_bytes_str', '--')}"
-            )
+            self.size_label.configure(text=f"Size: {d.get('_percent_str', '--')} of {d.get('_total_bytes_str', '--')}")
             self.eta_label.configure(text=f"ETA: {d.get('_eta_str', '--')}")
-            
             if 'filename' in d:
                 current_file = Path(d['filename']).name
-                self.progress_label.configure(
-                    text=f"Downloading: {current_file[:20]}..."
-                )
-                
+                self.progress_label.configure(text=f"Downloading: {current_file[:20]}...")
         elif d['status'] == 'finished':
             self.progress_label.configure(text="Processing...")
-            
         elif d['status'] == 'error':
             self.progress_label.configure(text="Error occurred!")
-            self.progress_frame.grid_remove()  # Hide progress frame on error
-
+            self.progress_frame.grid_remove()
+    
     def download(self, url):
-        download_path = str(Path.home() / "Downloads" / "YTDownloader")
+        download_path = self.dest_entry.get() or str(Path.home() / "Downloads" / "YTDownloader")
         os.makedirs(download_path, exist_ok=True)
         
         format_opt = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
@@ -182,17 +234,18 @@ class YTDownloaderGUI(ctk.CTk):
             
         quality = self.quality_var.get().lower()
         if quality != "best":
-            format_opt = f'bestvideo[height<={quality[:-1]}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-
+            quality_val = quality.replace("p", "")
+            format_opt = f'bestvideo[height<={quality_val}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        
         ydl_opts = {
             'format': format_opt,
             'progress_hooks': [self.download_callback],
             'outtmpl': os.path.join(download_path, '%(title)s.%(ext)s'),
-            'ignoreerrors': True,  # Skip failed downloads in playlist
-            'nooverwrites': True,  # Don't overwrite files
+            'ignoreerrors': True,
+            'nooverwrites': True,
         }
         
-        if self.is_playlist.get():
+        if self.playlist_var.get():
             ydl_opts.update({
                 'yes_playlist': True,
                 'extract_flat': False,
@@ -207,51 +260,60 @@ class YTDownloaderGUI(ctk.CTk):
                     'preferredquality': '192',
                 }],
             })
+        
+        if self.download_subtitles.get():
+            ydl_opts.update({
+                'writesubtitles': True,
+                'allsubtitles': True,
+                'subtitleslangs': ['en']
+            })
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # Reset progress indicators
                 self.progress_bar.set(0)
                 self.speed_label.configure(text="Speed: --")
                 self.size_label.configure(text="Size: --")
                 self.eta_label.configure(text="ETA: --")
                 
-                # Extract info first to show total videos for playlist
+                self.log_message("Extracting video information...")
                 info = ydl.extract_info(url, download=False)
-                if self.is_playlist.get() and 'entries' in info:
+                if self.playlist_var.get() and 'entries' in info:
                     total_videos = len(list(info['entries']))
-                    self.progress_label.configure(
-                        text=f"Found {total_videos} videos in playlist"
-                    )
+                    self.progress_label.configure(text=f"Found {total_videos} videos in playlist")
+                    self.log_message(f"Found {total_videos} videos in playlist.")
                 
-                # Start actual download
+                self.log_message("Starting download...")
                 ydl.download([url])
-                
                 self.progress_label.configure(text="Download completed!")
-                # Hide progress frame after a delay
+                self.log_message("Download completed successfully.")
                 self.after(3000, self.progress_frame.grid_remove)
-                
         except Exception as e:
-            self.progress_label.configure(text=f"Error: {str(e)}")
-            self.progress_frame.grid_remove()  # Hide progress frame on error
+            if "cancelled" in str(e).lower():
+                self.progress_label.configure(text="Download cancelled by user.")
+                self.log_message("Download cancelled by user.")
+            else:
+                self.progress_label.configure(text=f"Error: {str(e)}")
+                self.log_message(f"Error occurred: {str(e)}")
+            self.progress_frame.grid_remove()
         finally:
-            # Reset progress indicators
             self.progress_bar.set(0)
             self.speed_label.configure(text="Speed: --")
             self.size_label.configure(text="Size: --")
             self.eta_label.configure(text="ETA: --")
-
+            self.download_btn.configure(state="normal")
+            self.cancel_btn.configure(state="disabled")
+    
     def start_download(self):
-        url = self.url_entry.get()
+        url = self.url_entry.get().strip()
         if not url:
             self.progress_label.configure(text="Please enter a URL")
             return
             
+        self.cancel_download = False
         self.download_btn.configure(state="disabled")
+        self.cancel_btn.configure(state="normal")
         self.progress_label.configure(text="Starting download...")
-        self.progress_frame.grid()  # Show progress frame when starting download
-        
-        # Start download in a separate thread
+        self.progress_frame.grid()
         thread = threading.Thread(target=self.download, args=(url,))
         thread.daemon = True
         thread.start()
@@ -261,8 +323,13 @@ class YTDownloaderGUI(ctk.CTk):
                 self.after(100, check_thread)
             else:
                 self.download_btn.configure(state="normal")
-        
+                self.cancel_btn.configure(state="disabled")
         check_thread()
+    
+    def cancel_download_process(self):
+        self.cancel_download = True
+        self.log_message("Download cancellation requested.")
+        self.cancel_btn.configure(state="disabled")
 
 if __name__ == "__main__":
     app = YTDownloaderGUI()
