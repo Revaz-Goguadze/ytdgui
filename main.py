@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from downloader import download_video
 import yt_dlp
 import threading
 from pathlib import Path
@@ -225,68 +226,25 @@ class YTDownloaderGUI(ctk.CTk):
             self.progress_frame.grid_remove()
     
     def download(self, url):
-        download_path = self.dest_entry.get() or str(Path.home() / "Downloads" / "YTDownloader")
-        os.makedirs(download_path, exist_ok=True)
-        
-        format_opt = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-        if self.format_var.get() == "mp3":
-            format_opt = 'bestaudio/best'
-            
-        quality = self.quality_var.get().lower()
-        if quality != "best":
-            quality_val = quality.replace("p", "")
-            format_opt = f'bestvideo[height<={quality_val}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-        
-        ydl_opts = {
-            'format': format_opt,
-            'progress_hooks': [self.download_callback],
-            'outtmpl': os.path.join(download_path, '%(title)s.%(ext)s'),
-            'ignoreerrors': True,
-            'nooverwrites': True,
-        }
-        
-        if self.playlist_var.get():
-            ydl_opts.update({
-                'yes_playlist': True,
-                'extract_flat': False,
-                'outtmpl': os.path.join(download_path, '%(playlist_title)s/%(title)s.%(ext)s'),
-            })
-        
-        if self.format_var.get() == "mp3":
-            ydl_opts.update({
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-            })
-        
-        if self.download_subtitles.get():
-            ydl_opts.update({
-                'writesubtitles': True,
-                'allsubtitles': True,
-                'subtitleslangs': ['en']
-            })
+        destination = self.dest_entry.get() or str(Path.home() / "Downloads" / "YTDownloader")
+        format_opt = self.format_var.get()
+        playlist = self.playlist_var.get()
+        subtitles = self.download_subtitles.get()
+        quality = self.quality_var.get()
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                self.progress_bar.set(0)
-                self.speed_label.configure(text="Speed: --")
-                self.size_label.configure(text="Size: --")
-                self.eta_label.configure(text="ETA: --")
-                
-                self.log_message("Extracting video information...")
-                info = ydl.extract_info(url, download=False)
-                if self.playlist_var.get() and 'entries' in info:
-                    total_videos = len(list(info['entries']))
-                    self.progress_label.configure(text=f"Found {total_videos} videos in playlist")
-                    self.log_message(f"Found {total_videos} videos in playlist.")
-                
-                self.log_message("Starting download...")
-                ydl.download([url])
-                self.progress_label.configure(text="Download completed!")
-                self.log_message("Download completed successfully.")
-                self.after(3000, self.progress_frame.grid_remove)
+            download_video(
+                url=url,
+                format_opt=format_opt,
+                destination=destination,
+                playlist=playlist,
+                subtitles=subtitles,
+                quality=quality,
+                progress_hooks=[self.download_callback]
+            )
+            self.progress_label.configure(text="Download completed!")
+            self.log_message("Download completed successfully.")
+            self.after(3000, self.progress_frame.grid_remove)
         except Exception as e:
             if "cancelled" in str(e).lower():
                 self.progress_label.configure(text="Download cancelled by user.")
